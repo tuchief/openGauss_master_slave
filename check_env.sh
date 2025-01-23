@@ -1,13 +1,14 @@
 #!/bin/bash
 
 # 设置变量
-HAPROXY_DIR="./openeuler_haproxy/haproxy"
+HAPROXY_PARENT_DIR="./openeuler_haproxy"
+HAPROXY_DIR="$HAPROXY_PARENT_DIR/haproxy"
 
 # 检查 haproxy 目录是否存在
 if [ ! -d "$HAPROXY_DIR" ]; then
   echo "目录 $HAPROXY_DIR 不存在，正在克隆仓库..."
 
-  cd $HAPROXY_DIR
+  cd $HAPROXY_PARENT_DIR
 
   # 克隆指定分支
   git clone --branch v2.5.0 https://github.com/haproxy/haproxy.git
