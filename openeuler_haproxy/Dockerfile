@@ -11,7 +11,8 @@ RUN yum -y install gcc gcc-c++ make glibc glibc-devel pcre pcre-devel diffutils\
 
 RUN  mkdir -p /usr/local/src/ \
         && cd /usr/local/src \
-        && git clone --branch v2.5.0 https://github.com/haproxy/haproxy.git 
+
+COPY ./openeuler_haproxy/haproxy /usr/local/src \
 
 RUN   cd /usr/local/src/haproxy \
         && make ARCH=x86_64 TARGET=linux-glibc USE_OPENSSL=1 USE_ZLIB=1 \
