@@ -5,7 +5,7 @@ ENV LANG=zh_CN.utf8
 
 ADD ./openeuler_haproxy/run.sh /usr/local
 COPY ./openeuler_haproxy/haproxy.cfg /usr/local/haproxy/etc/
-COPY ./openeuler_haproxy/haproxy /usr/local/src/
+COPY ./openeuler_haproxy/haproxy /usr/local/src/haproxy/
 
 RUN yum -y install gcc gcc-c++ make glibc glibc-devel pcre pcre-devel diffutils\
         openssl openssl-devel systemd-devel zip unzip zlib zlib-devel git rsyslog glibc-common \
