@@ -23,7 +23,7 @@ RUN mv /tmp/gs_isready /opt/software/openGauss/bin/gs_isready && \
 RUN mv /tmp/patroni_openGauss /opt/software/patroni_openGauss
 
 ADD ./image/openGauss-*-openEuler-64bit-Libpq.tar.gz /opt/software/openGauss
-RUN rm -Rf /tmp/openGauss-3.0.0-openEuler-64bit-Libpq.tar.gz
+RUN rm -Rf /tmp/openGauss-*-openEuler-64bit-Libpq.tar.gz
 
 RUN tar -xzvf /tmp/etcd-*-linux-amd64.tar.gz -C /tmp/ && \
     rm -rf /tmp/etcd-*-linux-amd64.tar.gz && \

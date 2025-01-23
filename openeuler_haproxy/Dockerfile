@@ -3,6 +3,9 @@ FROM openeuler/openeuler:20.03
 ENV TIME_ZOME Asia/Shanghai
 ENV LANG=zh_CN.utf8
 
+ENV http_proxy=http://10.10.0.3:7890
+ENV https_proxy=http://10.10.0.3:7890
+
 ADD ./openeuler_haproxy/run.sh /usr/local
 COPY ./openeuler_haproxy/haproxy.cfg /usr/local/haproxy/etc/
 RUN yum -y install gcc gcc-c++ make glibc glibc-devel pcre pcre-devel diffutils\
