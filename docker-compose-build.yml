@@ -8,6 +8,7 @@ services:
     #restart: always
     container_name: master
     hostname: master
+    privileged: true
     networks:
       gauss:
         ipv4_address: 10.8.0.10
@@ -37,6 +38,7 @@ services:
     #restart: always
     container_name: slave01
     hostname: slave01
+    privileged: true
     networks:
       gauss:
         ipv4_address: 10.8.0.11
@@ -62,6 +64,7 @@ services:
     #restart: always
     container_name: slave02
     hostname: slave02
+    privileged: true
     networks:
       gauss:
         ipv4_address: 10.8.0.12
@@ -87,6 +90,7 @@ services:
     restart: always
     container_name: haproxy
     hostname: haproxy
+    privileged: true
     networks:
       gauss:
         ipv4_address: 10.8.0.19
@@ -105,6 +109,7 @@ services:
     restart: always
     container_name: pgadmin4
     hostname: pgadmin4
+    privileged: true
     networks:
       gauss:
         ipv4_address: 10.8.0.18
