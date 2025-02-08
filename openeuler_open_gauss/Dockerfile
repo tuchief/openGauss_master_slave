@@ -84,7 +84,7 @@ RUN tar -xzvf /tmp/openGauss-*-openEuler-x86_64-Python.tar.gz -C $GAUSSHOME &&\
 RUN  /usr/local/python3.7/bin/python3.7 -m pip install --upgrade pip --user && \
     pip install wheel --user && \
     cd /opt/software/patroni_openGauss && \
-    pip install -r requirements.txt --user && \
+    pip install -r requirements.txt -i https://pypi.douban.com/simple/ --user && \
     python setup.py build && python setup.py install --user && \
     rm -rf /opt/software/patroni_openGauss
 RUN mkdir -p /opt/software/openGauss/data && \
