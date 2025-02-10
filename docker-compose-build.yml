@@ -42,6 +42,8 @@ services:
     networks:
       gauss:
         ipv4_address: 10.8.0.11
+    ports:
+      - 15433:5432
     environment:
       TZ: Europe/Rome #Asia/Shanghai 时区
       GAUSS_USER: ${GAUSS_USER}
@@ -68,6 +70,8 @@ services:
     networks:
       gauss:
         ipv4_address: 10.8.0.12
+    ports:
+      - 15434:5432
     environment:
       TZ: Europe/Rome #Asia/Shanghai 时区
       GAUSS_USER: ${GAUSS_USER}

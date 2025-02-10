@@ -64,3 +64,4 @@ tags:
     noloadbalance: false
     clonefrom: false
     nosync: false
+    priority: 100
