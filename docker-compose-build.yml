@@ -16,6 +16,9 @@ services:
       - 15432:5432
       - 8980:80
       - 8008:8008
+      - 15433:5433
+      - 15436:5436
+      - 15437:5437
     environment:
       TZ: Europe/Rome #Asia/Shanghai 时区
       NODE_NAME: datanode1
@@ -43,7 +46,10 @@ services:
       gauss:
         ipv4_address: 10.8.0.11
     ports:
-      - 15433:5432
+      - 25432:5432
+      - 25433:5433
+      - 25436:5436
+      - 25437:5437
     environment:
       TZ: Europe/Rome #Asia/Shanghai 时区
       GAUSS_USER: ${GAUSS_USER}
@@ -71,7 +77,10 @@ services:
       gauss:
         ipv4_address: 10.8.0.12
     ports:
-      - 15434:5432
+      - 35432:5432
+      - 35433:5433
+      - 35436:5436
+      - 35437:5437
     environment:
       TZ: Europe/Rome #Asia/Shanghai 时区
       GAUSS_USER: ${GAUSS_USER}
