@@ -8,11 +8,7 @@ COPY ./image /tmp/
 RUN groupadd -r dbgrp && useradd -g dbgrp -G root omm && \
     mkdir -p /opt/software/openGauss && \
     tar -jxf /tmp/openGauss-*-openEuler-64bit.tar.bz2 -C /opt/software/openGauss && \
-    tar -zxf /tmp/openGauss-*-openEuler-64bit-om.tar.gz -C /opt/software/openGauss && \
-    tar -zxf /tmp/openGauss-*-openEuler-64bit-cm.tar.gz -C /opt/software/openGauss && \
     rm -f /tmp/openGauss-*-openEuler-64bit.tar.bz2 && \
-    rm -f /tmp/openGauss-*-openEuler-64bit-om.tar.gz && \
-    rm -f /tmp/openGauss-*-openEuler-64bit-cm.tar.gz && \
     mv /tmp/app.sh /opt/software/app.sh && \
     mv /tmp/entrypoint.sh /opt/software/entrypoint.sh && \
     mv /tmp/etcd.conf.sample /opt/software/etcd.conf.sample && \
