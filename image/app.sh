@@ -376,13 +376,39 @@ function set_environment() {
         let insert_line=$path_env_line
     fi
     sed -i "$insert_line i\export GAUSSHOME=\$SOFT_HOME/openGauss" ~/.bashrc
-    HOST_IP=$(ip addr | awk '/^[0-9]+: / {}; /inet.*global/ {print gensub(/(.*)\/(.*)/, "\\1", "g", $2)}')
+
+    # 优先使用环境变量中的HOST_IP，如果未设置则通过命令获取
+    if [ -z "$HOST_IP" ]; then
+        HOST_IP=$(get_host_ip)
+        # 检查HOST_IP是否为空
+        if [ -z "$HOST_IP" ]; then
+            echo "Error: Failed to get HOST_IP. Please set HOST_IP environment variable manually."
+            echo "Example: -e HOST_IP=192.168.1.100"
+            exit 1
+        fi
+    fi
+
     HOSTNAME=$(cat /etc/hostname)
     echo "export HOSTNAME=$HOSTNAME" >> ~/.bashrc
     echo "export HOST_IP=$HOST_IP" >> ~/.bashrc
     source ~/.bashrc
 }
+get_host_ip() {
+    # 方法1: 从路由表获取
+    local ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
 
+    # 方法2: 使用hostname -I
+    if [ -z "$ip" ]; then
+        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+
+    # 方法3: 使用ip addr命令
+    if [ -z "$ip" ]; then
+        ip=$(ip addr | awk '/inet .*global/ && !/127.0.0.1/ {gsub(/\/.*/, "", $2); print $2; exit}')
+    fi
+
+    echo "$ip"
+}
 first_Start_OpenGauss() {
     echo -e "\033[32m ==> First Start OpenGauss $RUN_MODE  <== \033[0m"
     set +e
