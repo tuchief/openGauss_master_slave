@@ -299,9 +299,16 @@ get_ETCD_INITIAL_CLUSTER () {
 set_etcd_config() {
     get_HOST_NAMES_IP
     get_ETCD_INITIAL_CLUSTER
+    # 检查 etcd/etcd.data 目录是否已存在，如果存在则跳过配置
+    if [[ -d "$SOFT_HOME/etcd/etcd.data" ]]; then
+        echo "etcd/etcd.data directory already exists, skipping etcd configuration..."
+        sed -i "/^initial-cluster-state:/c\initial-cluster-state: 'existing'" $GAUSS_CONF/etcd.conf
+        return 0
+    fi
     cp $SOFT_HOME/etcd.conf.sample $GAUSS_CONF/etcd.conf
-    sed -i "/^data-dir:/c\data-dir: '$SOFT_HOME/default.etcd'" $GAUSS_CONF/etcd.conf
-    sed -i "/^name:/c\name: '${HOSTNAME}'" $GAUSS_CONF/etcd.conf 
+    sed -i "/^data-dir:/c\data-dir: '$SOFT_HOME/etcd/etcd.data'" $GAUSS_CONF/etcd.conf
+    sed -i "/^wal-dir:/c\wal-dir: '$SOFT_HOME/etcd/etcd.wal'" $GAUSS_CONF/etcd.conf
+    sed -i "/^name:/c\name: '${HOSTNAME}'" $GAUSS_CONF/etcd.conf
     sed -i "/^listen-peer-urls:/c\listen-peer-urls: 'http:\/\/0.0.0.0:2380'" $GAUSS_CONF/etcd.conf 
     sed -i "/^initial-advertise-peer-urls:/c\initial-advertise-peer-urls: 'http:\/\/${HOST_IP}:2380'" $GAUSS_CONF/etcd.conf 
     sed -i "/^advertise-client-urls:/c\advertise-client-urls: 'http://0.0.0.0:2379,http://0.0.0.0:4001'" $GAUSS_CONF/etcd.conf
