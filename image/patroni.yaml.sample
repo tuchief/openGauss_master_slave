@@ -6,7 +6,7 @@ restapi:
   listen: localhost:8008
   connect_address: localhost:8008
 
-etcd3:
+etcd:
   host: localhost:2379
 
 bootstrap:

@@ -449,7 +449,7 @@ first_Start_OpenGauss() {
 function start_etcd(){
     set_etcd_config
     echo -e "\033[32m ==> Start $(etcd --version | grep etcd) Server... \033[0m"
-    etcd --config-file $GAUSS_CONF/etcd.conf > $LOGS_HOME/etcd.log 2>&1 &
+    etcd --enable-v2=true --config-file $GAUSS_CONF/etcd.conf > $LOGS_HOME/etcd.log 2>&1 &
     # etcdctl --endpoints=${CLIENT_URLS} endpoint status --write-out=table
 
 }
