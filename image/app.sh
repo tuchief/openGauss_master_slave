@@ -311,7 +311,7 @@ set_etcd_config() {
     sed -i "/^name:/c\name: '${HOSTNAME}'" $GAUSS_CONF/etcd.conf
     sed -i "/^listen-peer-urls:/c\listen-peer-urls: 'http:\/\/0.0.0.0:2380'" $GAUSS_CONF/etcd.conf 
     sed -i "/^initial-advertise-peer-urls:/c\initial-advertise-peer-urls: 'http:\/\/${HOST_IP}:2380'" $GAUSS_CONF/etcd.conf 
-    sed -i "/^advertise-client-urls:/c\advertise-client-urls: 'http:\/\/${HOST_IP}:2379'" $GAUSS_CONF/etcd.conf
+    sed -i "/^advertise-client-urls:/c\advertise-client-urls: 'http:\/\/${HOST_IP}:2379,http:\/\/${HOST_IP}:4001'" $GAUSS_CONF/etcd.conf
     sed -i "/^listen-client-urls:/c\listen-client-urls: 'http://0.0.0.0:2379,http://0.0.0.0:4001'" $GAUSS_CONF/etcd.conf
     sed -i "/^initial-cluster:/c\initial-cluster: '${ETCD_INITIAL_CLUSTER}'" $GAUSS_CONF/etcd.conf
     sed -i "/^initial-cluster-token:/c\initial-cluster-token: 'cluster1'" $GAUSS_CONF/etcd.conf
