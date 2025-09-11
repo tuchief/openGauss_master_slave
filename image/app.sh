@@ -299,9 +299,14 @@ get_ETCD_INITIAL_CLUSTER () {
 set_etcd_config() {
     get_HOST_NAMES_IP
     get_ETCD_INITIAL_CLUSTER
-    # 检查 etcd/etcd.data 目录是否已存在，如果存在则跳过配置
+    # 确保 CLUSTER_NEW 有默认值（未设置时默认为 false，更安全）
+    if [[ -z "${CLUSTER_NEW}" ]]; then
+        CLUSTER_NEW="false"
+    fi
+
+    # 检查 etcd/etcd.data 目录是否已存在
     if [[ -d "$SOFT_HOME/etcd/etcd.data" ]]; then
-        echo "etcd/etcd.data directory already exists, skipping etcd configuration..."
+        echo "etcd/etcd.data directory already exists, treating as existing member..."
         sed -i "/^initial-cluster-state:/c\initial-cluster-state: 'existing'" $GAUSS_CONF/etcd.conf
         return 0
     fi
@@ -317,6 +322,18 @@ set_etcd_config() {
     sed -i "/^initial-cluster-token:/c\initial-cluster-token: 'cluster1'" $GAUSS_CONF/etcd.conf
     sed -i "/^log-level:/c\#log-level: debug" $GAUSS_CONF/etcd.conf
     sed -i "/^cors:/c\cors: '*'" $GAUSS_CONF/etcd.conf
+
+    # 根据 CLUSTER_NEW 设置集群状态
+    if [[ "${CLUSTER_NEW}" == "true" ]]; then
+        echo "Initializing as a NEW cluster node"
+        cluster_state="new"
+    else
+        echo "Joining as an EXISTING cluster node"
+        cluster_state="existing"
+    fi
+
+    sed -i "/^initial-cluster-state:/c\initial-cluster-state: '${cluster_state}'" $GAUSS_CONF/etcd.conf
+    echo "etcd initial-cluster-state set to '${cluster_state}'"
 }
 
 get_ETCD_HOSTS () {
