@@ -299,17 +299,41 @@ get_ETCD_INITIAL_CLUSTER () {
 set_etcd_config() {
     get_HOST_NAMES_IP
     get_ETCD_INITIAL_CLUSTER
+    # 确保 CLUSTER_NEW 有默认值（未设置时默认为 false，更安全）
+    if [[ -z "${CLUSTER_NEW}" ]]; then
+        CLUSTER_NEW="false"
+    fi
+
+    # 检查 etcd/etcd.data 目录是否已存在
+    if [[ -d "$SOFT_HOME/etcd/etcd.data" ]]; then
+        echo "etcd/etcd.data directory already exists, treating as existing member..."
+        sed -i "/^initial-cluster-state:/c\initial-cluster-state: 'existing'" $GAUSS_CONF/etcd.conf
+        return 0
+    fi
     cp $SOFT_HOME/etcd.conf.sample $GAUSS_CONF/etcd.conf
-    sed -i "/^data-dir:/c\data-dir: '$SOFT_HOME/default.etcd'" $GAUSS_CONF/etcd.conf
-    sed -i "/^name:/c\name: '${HOSTNAME}'" $GAUSS_CONF/etcd.conf 
+    sed -i "/^data-dir:/c\data-dir: '$SOFT_HOME/etcd/etcd.data'" $GAUSS_CONF/etcd.conf
+    sed -i "/^wal-dir:/c\wal-dir: '$SOFT_HOME/etcd/etcd.wal'" $GAUSS_CONF/etcd.conf
+    sed -i "/^name:/c\name: '${HOSTNAME}'" $GAUSS_CONF/etcd.conf
     sed -i "/^listen-peer-urls:/c\listen-peer-urls: 'http:\/\/0.0.0.0:2380'" $GAUSS_CONF/etcd.conf 
     sed -i "/^initial-advertise-peer-urls:/c\initial-advertise-peer-urls: 'http:\/\/${HOST_IP}:2380'" $GAUSS_CONF/etcd.conf 
-    sed -i "/^advertise-client-urls:/c\advertise-client-urls: 'http://0.0.0.0:2379,http://0.0.0.0:4001'" $GAUSS_CONF/etcd.conf
+    sed -i "/^advertise-client-urls:/c\advertise-client-urls: 'http:\/\/${HOST_IP}:2379,http:\/\/${HOST_IP}:4001'" $GAUSS_CONF/etcd.conf
     sed -i "/^listen-client-urls:/c\listen-client-urls: 'http://0.0.0.0:2379,http://0.0.0.0:4001'" $GAUSS_CONF/etcd.conf
     sed -i "/^initial-cluster:/c\initial-cluster: '${ETCD_INITIAL_CLUSTER}'" $GAUSS_CONF/etcd.conf
     sed -i "/^initial-cluster-token:/c\initial-cluster-token: 'cluster1'" $GAUSS_CONF/etcd.conf
     sed -i "/^log-level:/c\#log-level: debug" $GAUSS_CONF/etcd.conf
     sed -i "/^cors:/c\cors: '*'" $GAUSS_CONF/etcd.conf
+
+    # 根据 CLUSTER_NEW 设置集群状态
+    if [[ "${CLUSTER_NEW}" == "true" ]]; then
+        echo "Initializing as a NEW cluster node"
+        cluster_state="new"
+    else
+        echo "Joining as an EXISTING cluster node"
+        cluster_state="existing"
+    fi
+
+    sed -i "/^initial-cluster-state:/c\initial-cluster-state: '${cluster_state}'" $GAUSS_CONF/etcd.conf
+    echo "etcd initial-cluster-state set to '${cluster_state}'"
 }
 
 get_ETCD_HOSTS () {
@@ -376,13 +400,39 @@ function set_environment() {
         let insert_line=$path_env_line
     fi
     sed -i "$insert_line i\export GAUSSHOME=\$SOFT_HOME/openGauss" ~/.bashrc
-    HOST_IP=$(ip addr | awk '/^[0-9]+: / {}; /inet.*global/ {print gensub(/(.*)\/(.*)/, "\\1", "g", $2)}')
+
+    # 优先使用环境变量中的HOST_IP，如果未设置则通过命令获取
+    if [ -z "$HOST_IP" ]; then
+        HOST_IP=$(get_host_ip)
+        # 检查HOST_IP是否为空
+        if [ -z "$HOST_IP" ]; then
+            echo "Error: Failed to get HOST_IP. Please set HOST_IP environment variable manually."
+            echo "Example: -e HOST_IP=192.168.1.100"
+            exit 1
+        fi
+    fi
+
     HOSTNAME=$(cat /etc/hostname)
     echo "export HOSTNAME=$HOSTNAME" >> ~/.bashrc
     echo "export HOST_IP=$HOST_IP" >> ~/.bashrc
     source ~/.bashrc
 }
+get_host_ip() {
+    # 方法1: 从路由表获取
+    local ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1); exit}')
 
+    # 方法2: 使用hostname -I
+    if [ -z "$ip" ]; then
+        ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+
+    # 方法3: 使用ip addr命令
+    if [ -z "$ip" ]; then
+        ip=$(ip addr | awk '/inet .*global/ && !/127.0.0.1/ {gsub(/\/.*/, "", $2); print $2; exit}')
+    fi
+
+    echo "$ip"
+}
 first_Start_OpenGauss() {
     echo -e "\033[32m ==> First Start OpenGauss $RUN_MODE  <== \033[0m"
     set +e
@@ -416,7 +466,7 @@ first_Start_OpenGauss() {
 function start_etcd(){
     set_etcd_config
     echo -e "\033[32m ==> Start $(etcd --version | grep etcd) Server... \033[0m"
-    etcd --config-file $GAUSS_CONF/etcd.conf > $LOGS_HOME/etcd.log 2>&1 &
+    etcd --enable-v2=true --config-file $GAUSS_CONF/etcd.conf > $LOGS_HOME/etcd.log 2>&1 &
     # etcdctl --endpoints=${CLIENT_URLS} endpoint status --write-out=table
 
 }
