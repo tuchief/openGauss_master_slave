@@ -1,4 +1,4 @@
-FROM lsqtzj/openeuler_python:20.03
+FROM server.aiknown.cn:31003/base/openeuler:20.03-lts
 
 EXPOSE 8080 5432 8008
 

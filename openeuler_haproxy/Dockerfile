@@ -1,4 +1,4 @@
-FROM openeuler/openeuler:20.03
+FROM server.aiknown.cn:31003/base/openeuler:20.03-lts
 
 ENV TIME_ZOME Asia/Shanghai
 ENV LANG=zh_CN.utf8
