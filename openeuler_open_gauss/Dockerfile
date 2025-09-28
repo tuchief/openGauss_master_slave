@@ -89,20 +89,22 @@ RUN rm -Rf /tmp/*
 # 安装 pip for python3.7
 RUN curl -sS https://mirrors.aliyun.com/pypi/get-pip.py -o get-pip.py && \
     /usr/bin/python3.7 get-pip.py && \
-    rm -f get-pip.py \
+    rm -f get-pip.py
 
 USER omm
-RUN /usr/bin/python3.7 -m pip install --upgrade pip --user && \
-    pip install wheel --user && \
-    cd /opt/software/patroni_openGauss && \
-    pip install -r requirements.txt --user && \
-    python setup.py build && python setup.py install --user && \
-    rm -rf /opt/software/patroni_openGauss
-RUN mkdir -p /opt/software/openGauss/data && \
-    mkdir -p /opt/software/openGauss/logs
+RUN /usr/bin/python3.7 -m pip install --upgrade pip --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
+RUN pip install wheel --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
+RUN cd /opt/software/patroni_openGauss && \
+    pip install -r requirements.txt --user -i https://pypi.tuna.tsinghua.edu.cn/simple/ && \
+    python3 setup.py build && python3 setup.py install --user
+RUN rm -rf /opt/software/patroni_openGauss
+
+RUN mkdir -p /opt/software/openGauss/data
+RUN mkdir -p /opt/software/openGauss/logs
 
 USER root
-RUN yum clean all 
+#RUN yum clean all
+RUN rm -rf /var/cache/yum /var/cache/dnf
 RUN mkdir -p /docker-entrypoint-initdb.d
 ENTRYPOINT [ "/opt/software/entrypoint.sh" ]
 CMD ["/bin/bash"]
