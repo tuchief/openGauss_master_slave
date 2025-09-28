@@ -65,7 +65,7 @@ RUN chmod 777 /usr/lib64/libdns.so.1102 /usr/lib64/liblwres.so.160 /usr/lib64/li
     /usr/lib64/libcrypto.so.10 /usr/lib64/libidn.so.11 /usr/lib64/libGeoIP.so.1 /usr/lib64/libbind9.so.160
 
 # 临时解决 [Errno 13] Permission denied: '/usr/local/python3.7/lib/python3.7/site-packages/
-RUN chown omm:dbgrp -R /usr/local/lib/python3.7/site-packages
+# RUN chown omm:dbgrp -R /usr/local/lib/python3.7/site-packages/
 
 USER omm
 
@@ -78,10 +78,15 @@ ENV GS_CLUSTER_NAME=dbCluster
 ENV ulimit -n 1000000
 
 RUN tar -xzvf /tmp/openGauss-*-openEuler-x86_64-Python.tar.gz -C $GAUSSHOME &&\
-    mv $GAUSSHOME/psycopg2 /usr/local/lib/python3.7/site-packages/psycopg2 &&\
-    rm -Rf /tmp/*
+    mv $GAUSSHOME/psycopg2 /usr/lib/python3.7/site-packages/psycopg2 &&\
+    rm -Rf /tmp/* \
 
-RUN  /usr/local/python3.7/bin/python3.7 -m pip install --upgrade pip --user && \
+# 安装 pip for python3.7
+RUN curl -sS https://mirrors.aliyun.com/pypi/get-pip.py -o get-pip.py && \
+    /usr/bin/python3.7 get-pip.py && \
+    rm -f get-pip.py \
+
+RUN /usr/bin/python3.7 -m pip install --upgrade pip --user && \
     pip install wheel --user && \
     cd /opt/software/patroni_openGauss && \
     pip install -r requirements.txt --user && \
