@@ -5,6 +5,8 @@ EXPOSE 8080 5432 8008
 WORKDIR /opt/software
 COPY ./image /tmp/
 
+RUN yum install -y --nogpgcheck tar iproute net-tools numactl numactl-libs
+RUN yum clean all
 RUN groupadd -r dbgrp && useradd -g dbgrp -G root omm && \
     mkdir -p /opt/software/openGauss && \
     tar -jxf /tmp/openGauss-*-openEuler-64bit.tar.bz2 -C /opt/software/openGauss && \
