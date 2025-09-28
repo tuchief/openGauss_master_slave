@@ -16,11 +16,13 @@ RUN groupadd -r dbgrp && useradd -g dbgrp -G root omm && \
     mv /tmp/etcd.conf.sample /opt/software/etcd.conf.sample && \
     mv /tmp/patroni.yaml.sample /opt/software/patroni.yaml.sample 
 
+RUN rpm -ivh /tmp/libaio-*
+
 # 解决patroni找不到gs_isready问题
-RUN mv /tmp/gs_isready /opt/software/openGauss/bin/gs_isready && \
-    mv /tmp/libreadline.so.6.2 /usr/lib64/libreadline.so.6.2 && \
-    ln -sf /usr/lib64/libreadline.so.6.2 /usr/lib64/libreadline.so.6 && \
-    chmod 777 /usr/lib64/libreadline.so.6
+RUN mv /tmp/gs_isready /opt/software/openGauss/bin/gs_isready
+RUN mv /tmp/libreadline.so.6.2 /usr/lib64/libreadline.so.6.2
+RUN ln -sf /usr/lib64/libreadline.so.6.2 /usr/lib64/libreadline.so.6
+RUN chmod 777 /usr/lib64/libreadline.so.6
 
 RUN mv /tmp/patroni_openGauss /opt/software/patroni_openGauss
 
