@@ -32,15 +32,15 @@ RUN tar -xzvf /tmp/etcd-*-linux-amd64.tar.gz -C /tmp/ && \
     cd /tmp/etcd-*-linux-amd64 && cp ./etcd* /usr/bin && \
     rm -rf /tmp/etcd-*-linux-amd64
 
-RUN chown omm:dbgrp -R /opt/software && \
-    echo "omm" | sudo passwd omm --stdin  &>/dev/null && \
-    echo "root" | sudo passwd root --stdin  &>/dev/null && \
-    chown omm:dbgrp -R /tmp/*  && \
-    chmod -R 700 /tmp/*  && \
-    chmod -R 700 /opt/software  && \
-    chmod +x /opt/software/openGauss/simpleInstall/install.sh && \
-    chmod +x /opt/software/app.sh  && \
-    chmod +x /opt/software/entrypoint.sh
+RUN chown omm:dbgrp -R /opt/software
+#    echo "omm" | sudo passwd omm --stdin  &>/dev/null && \
+#    echo "root" | sudo passwd root --stdin  &>/dev/null && \
+RUN chown omm:dbgrp -R /tmp/*
+RUN chmod -R 700 /tmp/*
+RUN chmod -R 700 /opt/software
+RUN chmod +x /opt/software/openGauss/simpleInstall/install.sh
+RUN chmod +x /opt/software/app.sh
+RUN chmod +x /opt/software/entrypoint.sh
 
 # 临时解决 host: command not found
 RUN mv /tmp/host /usr/bin/host && \
