@@ -77,15 +77,21 @@ ENV LD_LIBRARY_PATH=$GAUSSHOME/lib:$LD_LIBRARY_PATH
 ENV GS_CLUSTER_NAME=dbCluster
 ENV ulimit -n 1000000
 
-RUN tar -xzvf /tmp/openGauss-*-openEuler-x86_64-Python.tar.gz -C $GAUSSHOME &&\
-    mv $GAUSSHOME/psycopg2 /usr/lib/python3.7/site-packages/psycopg2 &&\
-    rm -Rf /tmp/* \
+RUN tar -xzvf /tmp/openGauss-*-openEuler-x86_64-Python.tar.gz -C $GAUSSHOME
+
+# 切换到 root，执行拷贝和授权
+USER root
+RUN chmod -R 755 $GAUSSHOME/psycopg2 && \
+    chown -R root:root $GAUSSHOME/psycopg2 && \
+    mv $GAUSSHOME/psycopg2 /usr/lib/python3.7/site-packages/
+RUN rm -Rf /tmp/*
 
 # 安装 pip for python3.7
 RUN curl -sS https://mirrors.aliyun.com/pypi/get-pip.py -o get-pip.py && \
     /usr/bin/python3.7 get-pip.py && \
     rm -f get-pip.py \
 
+USER omm
 RUN /usr/bin/python3.7 -m pip install --upgrade pip --user && \
     pip install wheel --user && \
     cd /opt/software/patroni_openGauss && \
@@ -94,6 +100,7 @@ RUN /usr/bin/python3.7 -m pip install --upgrade pip --user && \
     rm -rf /opt/software/patroni_openGauss
 RUN mkdir -p /opt/software/openGauss/data && \
     mkdir -p /opt/software/openGauss/logs
+
 USER root
 RUN yum clean all 
 RUN mkdir -p /docker-entrypoint-initdb.d
