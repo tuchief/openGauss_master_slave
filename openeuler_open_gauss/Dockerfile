@@ -16,6 +16,7 @@ RUN groupadd -r dbgrp && useradd -g dbgrp -G root omm && \
     mv /tmp/etcd.conf.sample /opt/software/etcd.conf.sample && \
     mv /tmp/patroni.yaml.sample /opt/software/patroni.yaml.sample 
 
+# 解决libaio.so.1.0.3找不到问题
 RUN rpm -ivh /tmp/libaio-*
 
 # 解决patroni找不到gs_isready问题
@@ -89,9 +90,7 @@ RUN chmod -R 755 $GAUSSHOME/psycopg2 && \
 RUN rm -Rf /tmp/*
 
 # 安装 pip for python3.7
-RUN curl -sS https://mirrors.aliyun.com/pypi/get-pip.py -o get-pip.py && \
-    /usr/bin/python3.7 get-pip.py && \
-    rm -f get-pip.py
+RUN /usr/bin/python3.7 -m pip install /tmp/pip-20.3.4-py2.py3-none-any.whl
 
 USER omm
 RUN /usr/bin/python3.7 -m pip install --upgrade pip --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
