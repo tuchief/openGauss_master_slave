@@ -90,7 +90,7 @@ RUN chmod -R 755 $GAUSSHOME/psycopg2 && \
 RUN rm -Rf /tmp/*
 
 # 安装 pip for python3.7
-RUN /usr/bin/python3.7 -m pip install /tmp/pip-20.3.4-py2.py3-none-any.whl
+RUN /usr/bin/python3.7 -m pip install /tmp/pip-20.3.4-py2.py3-none-any.whl --user
 
 USER omm
 RUN /usr/bin/python3.7 -m pip install --upgrade pip --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
