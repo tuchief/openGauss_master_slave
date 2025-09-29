@@ -89,12 +89,12 @@ RUN chmod -R 755 $GAUSSHOME/psycopg2 && \
     mv $GAUSSHOME/psycopg2 /usr/lib/python3.7/site-packages/
 
 # 安装 pip for python3.7
-RUN /usr/bin/python3.7 -m pip install /tmp/pip-20.3.4-py2.py3-none-any.whl --user
+RUN /usr/bin/python3.7 -m pip install /tmp/pip-24.0-py3-none-any.whl --user
 
 RUN rm -Rf /tmp/*
 
 USER omm
-RUN /usr/bin/python3.7 -m pip install --upgrade pip --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
+RUN #/usr/bin/python3.7 -m pip install --upgrade pip --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
 RUN pip install wheel --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
 RUN cd /opt/software/patroni_openGauss && \
     pip install -r requirements.txt --user -i https://pypi.tuna.tsinghua.edu.cn/simple/ && \
