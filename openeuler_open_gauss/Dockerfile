@@ -89,6 +89,7 @@ RUN chmod -R 755 $GAUSSHOME/psycopg2 && \
     mv $GAUSSHOME/psycopg2 /usr/lib/python3.7/site-packages/
 
 USER omm
+ENV PATH=/home/omm/.local/bin:$PATH
 # 安装 pip for python3.7
 RUN /usr/bin/python3.7 -m pip install /tmp/pip-24.0-py3-none-any.whl --user
 RUN #/usr/bin/python3.7 -m pip install --upgrade pip --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
