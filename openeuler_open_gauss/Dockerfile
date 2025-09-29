@@ -86,11 +86,12 @@ RUN tar -xzvf /tmp/openGauss-*-openEuler-x86_64-Python.tar.gz -C $GAUSSHOME
 USER root
 RUN chmod -R 755 $GAUSSHOME/psycopg2 && \
     chown -R root:root $GAUSSHOME/psycopg2 && \
-    mv $GAUSSHOME/psycopg2 /usr/lib/python3.7/site-packages/
-RUN rm -Rf /tmp/*
+    mv $GAUSSHOME/psycopg2 /usr/lib/python3.7/site-packages/ \
 
 # 安装 pip for python3.7
 RUN /usr/bin/python3.7 -m pip install /tmp/pip-20.3.4-py2.py3-none-any.whl --user
+
+RUN rm -Rf /tmp/*
 
 USER omm
 RUN /usr/bin/python3.7 -m pip install --upgrade pip --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
