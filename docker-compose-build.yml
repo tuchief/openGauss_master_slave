@@ -1,7 +1,7 @@
 version: "3"
 services:
   master:
-    image: lsqtzj/openeuler_open_gauss:${OPEN_GAUSS_VERSION}
+    image: server.aiknown.cn:31003/z-rps/opengauss/openeuler_opengauss:${OPENGAUSS_VERSION}
     build:
       context: .
       dockerfile: openeuler_open_gauss/Dockerfile
@@ -13,12 +13,12 @@ services:
       gauss:
         ipv4_address: 10.8.0.10
     ports:
-      - 15432:5432
+      - 11432:5432
       - 8980:80
       - 8008:8008
-      - 15433:5433
-      - 15436:5436
-      - 15437:5437
+      - 11433:5433
+      - 11436:5436
+      - 11437:5437
     environment:
       TZ: Europe/Rome #Asia/Shanghai 时区
       NODE_NAME: datanode1
@@ -34,7 +34,7 @@ services:
       - ./test.sql:/docker-entrypoint-initdb.d/test.sql # 初始化数据表
 
   slave01:
-    image: lsqtzj/openeuler_open_gauss:${OPEN_GAUSS_VERSION}
+    image: server.aiknown.cn:31003/z-rps/opengauss/openeuler_opengauss:${OPENGAUSS_VERSION}
     build:
       context: .
       dockerfile: openeuler_open_gauss/Dockerfile
@@ -46,10 +46,10 @@ services:
       gauss:
         ipv4_address: 10.8.0.11
     ports:
-      - 25432:5432
-      - 25433:5433
-      - 25436:5436
-      - 25437:5437
+      - 21432:5432
+      - 21433:5433
+      - 21436:5436
+      - 21437:5437
     environment:
       TZ: Europe/Rome #Asia/Shanghai 时区
       GAUSS_USER: ${GAUSS_USER}
@@ -65,7 +65,7 @@ services:
       - master
 
   slave02:
-    image: lsqtzj/openeuler_open_gauss:${OPEN_GAUSS_VERSION}
+    image: server.aiknown.cn:31003/z-rps/opengauss/openeuler_opengauss:${OPENGAUSS_VERSION}
     build:
       context: .
       dockerfile: openeuler_open_gauss/Dockerfile
@@ -77,10 +77,10 @@ services:
       gauss:
         ipv4_address: 10.8.0.12
     ports:
-      - 35432:5432
-      - 35433:5433
-      - 35436:5436
-      - 35437:5437
+      - 31432:5432
+      - 31433:5433
+      - 31436:5436
+      - 31437:5437
     environment:
       TZ: Europe/Rome #Asia/Shanghai 时区
       GAUSS_USER: ${GAUSS_USER}
