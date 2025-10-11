@@ -96,7 +96,7 @@ services:
       - master
 
   haproxy:
-    image: lsqtzj/openeuler_haproxy:${HAPROXY_VERSION}
+    image: server.aiknown.cn:31003/z-rps/opengauss/openeuler_haproxy:${HAPROXY_VERSION}
     build:
       context: .
       dockerfile: openeuler_haproxy/Dockerfile
@@ -118,7 +118,7 @@ services:
 
 
   pgadmin4:
-    image: lsqtzj/openeuler_pgadmin4
+    image: server.aiknown.cn:31003/z-rps/opengauss/pgadmin4:${PGADMIN4_VERSION}
     restart: always
     container_name: pgadmin4
     hostname: pgadmin4
