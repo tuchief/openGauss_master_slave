@@ -1,7 +1,7 @@
 version: "3"
 services:
   master:
-    image: server.aiknown.cn:31003/z-rps/opengauss/openeuler_opengauss:${OPENGAUSS_VERSION}
+    image: server.aiknown.cn:31003/z-rps/opengauss:${OPENGAUSS_VERSION}
     build:
       context: .
       dockerfile: openeuler_open_gauss/Dockerfile
@@ -34,7 +34,7 @@ services:
       - ./test.sql:/docker-entrypoint-initdb.d/test.sql # 初始化数据表
 
   slave01:
-    image: server.aiknown.cn:31003/z-rps/opengauss/openeuler_opengauss:${OPENGAUSS_VERSION}
+    image: server.aiknown.cn:31003/z-rps/opengauss:${OPENGAUSS_VERSION}
     build:
       context: .
       dockerfile: openeuler_open_gauss/Dockerfile
@@ -65,7 +65,7 @@ services:
       - master
 
   slave02:
-    image: server.aiknown.cn:31003/z-rps/opengauss/openeuler_opengauss:${OPENGAUSS_VERSION}
+    image: server.aiknown.cn:31003/z-rps/opengauss:${OPENGAUSS_VERSION}
     build:
       context: .
       dockerfile: openeuler_open_gauss/Dockerfile
