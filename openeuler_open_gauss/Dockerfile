@@ -53,7 +53,6 @@ RUN chmod +x /opt/software/app.sh
 RUN chmod +x /opt/software/entrypoint.sh    
 
 USER omm
-
 ENV SOFT_HOME=/opt/software
 ENV GAUSSHOME=$SOFT_HOME/openGauss
 ENV PATH=$GAUSSHOME/bin:$PATH:/usr/local/python3.7/bin:/home/omm/venv/bin
@@ -61,6 +60,8 @@ ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:/usr/lib
 ENV LD_LIBRARY_PATH=$GAUSSHOME/lib:$LD_LIBRARY_PATH
 ENV GS_CLUSTER_NAME=dbCluster
 ENV ulimit -n 1000000
+# 设置 PGDATA
+ENV PGDATA=/opt/software/openGauss/data/db
                    
 RUN tar -xzvf /tmp/openGauss-*-openEuler-aarch64-Python.tar.gz -C $GAUSSHOME
 
@@ -87,6 +88,9 @@ RUN mkdir -p /opt/software/openGauss/data
 RUN mkdir -p /opt/software/openGauss/logs
 
 USER root
+# 创建软链接
+RUN ln -s /opt/software/openGauss /usr/local/opengauss
+
 #RUN yum clean all 
 RUN rm -rf /var/cache/yum /var/cache/dnf
 RUN mkdir -p /docker-entrypoint-initdb.d
