@@ -78,11 +78,10 @@ RUN curl -sS https://mirrors.aliyun.com/pypi/get-pip.py -o get-pip.py && \
     rm -f get-pip.py
 
 USER omm
-RUN /usr/bin/python3.7 -m pip install --upgrade pip --user
-RUN pip install wheel --user
-RUN cd /opt/software/patroni_openGauss && pip install -r requirements.txt --user
-RUN cd /opt/software/patroni_openGauss && python3 setup.py build
-RUN cd /opt/software/patroni_openGauss && python3 setup.py install --user
+RUN pip install wheel --user -i https://pypi.tuna.tsinghua.edu.cn/simple/
+RUN cd /opt/software/patroni_openGauss && \
+    pip install -r requirements.txt --user -i https://pypi.tuna.tsinghua.edu.cn/simple/ && \
+    python3 setup.py build && python3 setup.py install --user
 RUN rm -rf /opt/software/patroni_openGauss
 RUN mkdir -p /opt/software/openGauss/data
 RUN mkdir -p /opt/software/openGauss/logs
