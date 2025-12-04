@@ -508,6 +508,22 @@ function status_db(){
 }
 echo "==> START Service ..."
 set_environment
+
+# 增加etcd运行模式的判断
+if [ "$RUN_MODE" == "etcd" ]; then
+    echo -e "\033[32m ==> Starting ETCD-only Node... \033[0m"
+    start_etcd
+    echo -e "\033[32m ==> ETCD Service SUCCESSFUL ... \033[0m"
+    # 直接等待，不执行 init_db 和 start_db
+    tail -f /dev/null &
+    waitterm
+
+    echo -e "\033[31m ==> STOP Service\033[0m"
+    stop_db
+    echo -e "\033[31m ==> STOP Service SUCCESSFUL ...\033[0m"
+    exit 0
+fi
+
 if [ $RUN_MODE != "standard" ]; then    
     start_etcd
 fi
