@@ -78,7 +78,7 @@ ENV PATH=$GAUSSHOME/bin:$PATH:/usr/local/python3.7/bin:/home/omm/venv/bin
 ENV LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:/usr/lib
 ENV LD_LIBRARY_PATH=$GAUSSHOME/lib:$LD_LIBRARY_PATH
 ENV GS_CLUSTER_NAME=dbCluster
-ENV ulimit -n 1000000
+#ENV ulimit -n 1000000
 # 设置 PGDATA
 ENV PGDATA=/opt/software/openGauss/data/db
 
