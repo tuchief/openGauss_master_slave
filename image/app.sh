@@ -177,7 +177,7 @@ function init_db() {
                     echo -e "\033[32m ********************** docker entrypoint initdb *************************\033[0m" 
                     # master 初始化数据库            
                     if [ "$GAUSS_DATABASE" ]; then
-                        gsql -d postgres -c "CREATE DATABASE $GAUSS_DATABASE WITH OWNER = $GAUSS_USER ENCODING = 'UTF8' CONNECTION LIMIT = -1;"
+                        gsql -d postgres -c "CREATE DATABASE $GAUSS_DATABASE WITH OWNER = $GAUSS_USER ENCODING = 'UTF8' LC_COLLATE = 'C' LC_CTYPE = 'C' DBCOMPATIBILITY='PG' CONNECTION LIMIT = -1;"
                         # 字符串转小写
                         GAUSS_DATABASE=$(echo $GAUSS_DATABASE | tr 'A-Z' 'a-z')
                         for f in /docker-entrypoint-initdb.d/*; do
@@ -220,7 +220,7 @@ function init_db() {
                 echo -e "\033[32m ********************** docker entrypoint initdb *************************\033[0m" 
                 # 初始化数据库            
                 if [ "$GAUSS_DATABASE" ]; then
-                    gsql -d postgres -c "CREATE DATABASE $GAUSS_DATABASE WITH OWNER = $GAUSS_USER ENCODING = 'UTF8' CONNECTION LIMIT = -1;"
+                    gsql -d postgres -c "CREATE DATABASE $GAUSS_DATABASE WITH OWNER = $GAUSS_USER ENCODING = 'UTF8' LC_COLLATE = 'C' LC_CTYPE = 'C' DBCOMPATIBILITY='PG' CONNECTION LIMIT = -1;"
                     # 字符串转小写
                     GAUSS_DATABASE=$(echo $GAUSS_DATABASE | tr 'A-Z' 'a-z')
                     for f in /docker-entrypoint-initdb.d/*; do
