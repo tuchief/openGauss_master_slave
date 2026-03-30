@@ -48,6 +48,8 @@ if [[ ! -d "$GAUSS_CONF" ]]; then
 fi
 
 GAUSS_PORT=5432
+MAX_CONNECTIONS=1000
+
 waitterm() {
     local PID
     # any process to block
@@ -136,6 +138,7 @@ function config_datanode(){
     -c "most_available_sync = on" \
     -c "remote_read_mode = off" \
     -c "application_name = '$HOSTNAME'" \
+    -c "max_connections = $MAX_CONNECTIONS" \
     -c "remote_read_mode = non_authentication"
     if [ $RUN_MODE != "standard" ]; then
         i=1
