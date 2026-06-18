@@ -1,0 +1,221 @@
+# ============================================================
+# openGauss HA Cluster - Local Test (bridge networking)
+# 单机 Mac/PC 测试 6 容器集群：
+#   3 etcd (独立) + 3 openGauss (Patroni)
+#
+# IP 分配:
+#   172.20.0.10  etcd-a1
+#   172.20.0.20  etcd-b1
+#   172.20.0.30  etcd-c1
+#   172.20.0.11  master
+#   172.20.0.21  slave01
+#   172.20.0.31  slave02
+#
+# 用法:
+#   docker compose -f docker-compose.test.yml up -d
+#   docker compose -f docker-compose.test.yml down -v
+# ============================================================
+services:
+
+  # ---- etcd 集群 ----
+  etcd-a1:
+    image: opengauss-ha:5.0.3_arm
+    container_name: etcd-a1
+    hostname: etcd-a1
+    privileged: true
+    networks:
+      ha-net:
+        ipv4_address: 172.20.0.10
+    ports:
+      - "12379:2379"
+      - "12380:2380"
+    environment:
+      TZ: Asia/Shanghai
+      RUN_MODE: etcd
+      NODE_NAME: etcd-a1
+      HOST_IP: 172.20.0.10
+      ETCD_PEERS: etcd-a1=http://172.20.0.10:2380,etcd-b1=http://172.20.0.20:2380,etcd-c1=http://172.20.0.30:2380
+      ETCD_CLUSTER_TOKEN: opengauss-ha-cluster-1
+      CLUSTER_NEW: "true"
+      HOST_NAMES: master,slave01,slave02
+      HOST_IPS: 172.20.0.11,172.20.0.21,172.20.0.31
+      GAUSS_USER: gauss
+      GAUSS_PASSWORD: SecurePass123
+      GAUSS_DATABASE: test
+    volumes:
+      - ./data/etcd-a1/data:/opt/software/openGauss/data
+
+  etcd-b1:
+    image: opengauss-ha:5.0.3_arm
+    container_name: etcd-b1
+    hostname: etcd-b1
+    privileged: true
+    networks:
+      ha-net:
+        ipv4_address: 172.20.0.20
+    ports:
+      - "22379:2379"
+      - "22380:2380"
+    environment:
+      TZ: Asia/Shanghai
+      RUN_MODE: etcd
+      NODE_NAME: etcd-b1
+      HOST_IP: 172.20.0.20
+      ETCD_PEERS: etcd-a1=http://172.20.0.10:2380,etcd-b1=http://172.20.0.20:2380,etcd-c1=http://172.20.0.30:2380
+      ETCD_CLUSTER_TOKEN: opengauss-ha-cluster-1
+      CLUSTER_NEW: "true"
+      HOST_NAMES: master,slave01,slave02
+      HOST_IPS: 172.20.0.11,172.20.0.21,172.20.0.31
+      GAUSS_USER: gauss
+      GAUSS_PASSWORD: SecurePass123
+      GAUSS_DATABASE: test
+    volumes:
+      - ./data/etcd-b1/data:/opt/software/openGauss/data
+
+  etcd-c1:
+    image: opengauss-ha:5.0.3_arm
+    container_name: etcd-c1
+    hostname: etcd-c1
+    privileged: true
+    networks:
+      ha-net:
+        ipv4_address: 172.20.0.30
+    ports:
+      - "32379:2379"
+      - "32380:2380"
+    environment:
+      TZ: Asia/Shanghai
+      RUN_MODE: etcd
+      NODE_NAME: etcd-c1
+      HOST_IP: 172.20.0.30
+      ETCD_PEERS: etcd-a1=http://172.20.0.10:2380,etcd-b1=http://172.20.0.20:2380,etcd-c1=http://172.20.0.30:2380
+      ETCD_CLUSTER_TOKEN: opengauss-ha-cluster-1
+      CLUSTER_NEW: "true"
+      HOST_NAMES: master,slave01,slave02
+      HOST_IPS: 172.20.0.11,172.20.0.21,172.20.0.31
+      GAUSS_USER: gauss
+      GAUSS_PASSWORD: SecurePass123
+      GAUSS_DATABASE: test
+    volumes:
+      - ./data/etcd-c1/data:/opt/software/openGauss/data
+
+  # ---- openGauss 数据库节点 ----
+  master:
+    image: opengauss-ha:5.0.3_arm
+    container_name: master
+    hostname: master
+    privileged: true
+    cpuset: "0"
+    networks:
+      ha-net:
+        ipv4_address: 172.20.0.11
+    ports:
+      - "15432:5432"
+      - "18008:8008"
+    environment:
+      TZ: Asia/Shanghai
+      RUN_MODE: master
+      NODE_NAME: datanode1
+      HOST_IP: 172.20.0.11
+      ETCD_HOSTS: 172.20.0.10:2379,172.20.0.20:2379,172.20.0.30:2379
+      HOST_NAMES: master,slave01,slave02
+      HOST_IPS: 172.20.0.11,172.20.0.21,172.20.0.31
+      GAUSS_USER: gauss
+      GAUSS_PASSWORD: SecurePass123
+      GAUSS_DATABASE: test
+      LOOP_WAIT: 10
+      RETRY_TIMEOUT: 30
+      TTL: 60
+      SYNCHRONOUS_MODE: false
+      MAXIMUM_LAG_ON_FAILOVER: 104857600
+      MAX_CONNECTIONS: 10
+      WAL_LEVEL: logical
+    volumes:
+      - ./data/master/data:/opt/software/openGauss/data
+      - ./data/master/logs:/opt/software/openGauss/logs
+    depends_on:
+      etcd-a1:
+        condition: service_started
+      etcd-b1:
+        condition: service_started
+      etcd-c1:
+        condition: service_started
+
+  slave01:
+    image: opengauss-ha:5.0.3_arm
+    container_name: slave01
+    hostname: slave01
+    privileged: true
+    networks:
+      ha-net:
+        ipv4_address: 172.20.0.21
+    ports:
+      - "25432:5432"
+      - "28008:8008"
+    environment:
+      TZ: Asia/Shanghai
+      RUN_MODE: slave01
+      NODE_NAME: datanode2
+      HOST_IP: 172.20.0.21
+      ETCD_HOSTS: 172.20.0.10:2379,172.20.0.20:2379,172.20.0.30:2379
+      HOST_NAMES: master,slave01,slave02
+      HOST_IPS: 172.20.0.11,172.20.0.21,172.20.0.31
+      GAUSS_USER: gauss
+      GAUSS_PASSWORD: SecurePass123
+      GAUSS_DATABASE: test
+      LOOP_WAIT: 10
+      RETRY_TIMEOUT: 30
+      TTL: 60
+      SYNCHRONOUS_MODE: false
+      MAXIMUM_LAG_ON_FAILOVER: 104857600
+      MAX_CONNECTIONS: 10
+      WAL_LEVEL: logical
+    volumes:
+      - ./data/slave01/data:/opt/software/openGauss/data
+      - ./data/slave01/logs:/opt/software/openGauss/logs
+    depends_on:
+      master:
+        condition: service_started
+
+  slave02:
+    image: opengauss-ha:5.0.3_arm
+    container_name: slave02
+    hostname: slave02
+    privileged: true
+    networks:
+      ha-net:
+        ipv4_address: 172.20.0.31
+    ports:
+      - "35432:5432"
+      - "38008:8008"
+    environment:
+      TZ: Asia/Shanghai
+      RUN_MODE: slave02
+      NODE_NAME: datanode3
+      HOST_IP: 172.20.0.31
+      ETCD_HOSTS: 172.20.0.10:2379,172.20.0.20:2379,172.20.0.30:2379
+      HOST_NAMES: master,slave01,slave02
+      HOST_IPS: 172.20.0.11,172.20.0.21,172.20.0.31
+      GAUSS_USER: gauss
+      GAUSS_PASSWORD: SecurePass123
+      GAUSS_DATABASE: test
+      LOOP_WAIT: 10
+      RETRY_TIMEOUT: 30
+      TTL: 60
+      SYNCHRONOUS_MODE: false
+      MAXIMUM_LAG_ON_FAILOVER: 104857600
+      MAX_CONNECTIONS: 10
+      WAL_LEVEL: logical
+    volumes:
+      - ./data/slave02/data:/opt/software/openGauss/data
+      - ./data/slave02/logs:/opt/software/openGauss/logs
+    depends_on:
+      master:
+        condition: service_started
+
+networks:
+  ha-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24

@@ -1,0 +1,29 @@
+# ============================================================
+# openGauss Single Node - POC / Demo
+#
+# Uses the same openGauss image as HA deployments. No etcd and no Patroni
+# failover are started in RUN_MODE=standard.
+#
+# Usage:
+#   docker compose --env-file configs/single.env.example -f docker-compose.single.yml up -d
+# ============================================================
+services:
+  opengauss:
+    image: ${OPENGAUSS_IMAGE:-opengauss-ha:5.0.3_arm}
+    restart: always
+    container_name: ${CONTAINER_NAME:-opengauss-single}
+    hostname: ${CONTAINER_NAME:-opengauss-single}
+    privileged: true
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      RUN_MODE: standard
+      GAUSS_USER: ${GAUSS_USER:-gauss}
+      GAUSS_PASSWORD: ${GAUSS_PASSWORD:-SecurePass123}
+      GAUSS_DATABASE: ${GAUSS_DATABASE:-test}
+      MAX_CONNECTIONS: ${MAX_CONNECTIONS:-1000}
+      WAL_LEVEL: ${WAL_LEVEL:-logical}
+    volumes:
+      - ./data/${CONTAINER_NAME:-opengauss-single}/data:/opt/software/openGauss/data
+      - ./data/${CONTAINER_NAME:-opengauss-single}/logs:/opt/software/openGauss/logs

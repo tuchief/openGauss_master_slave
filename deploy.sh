@@ -1,0 +1,434 @@
+#!/bin/bash
+# ============================================================
+# openGauss HA Cluster - 一键部署 & 故障恢复脚本
+#
+# 用法:
+#   ./deploy.sh install <name> <ip>     一键安装节点
+#   ./deploy.sh status                  查看集群状态
+#   ./deploy.sh recover <name>          恢复故障节点
+#   ./deploy.sh etcd-recover <name>     恢复故障 etcd 节点
+#   ./deploy.sh promote <name>          手动提升备库
+#
+# 前置: cluster.conf 放在脚本同目录
+# ============================================================
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONF_FILE="$SCRIPT_DIR/cluster.conf"
+
+# === Docker Compose 命令检测 ===
+DOCKER_COMPOSE_CMD="docker compose"
+if ! docker compose version &>/dev/null; then
+    if docker-compose --version &>/dev/null; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+    else
+        echo "Error: Neither 'docker compose' nor 'docker-compose' found"
+        exit 1
+    fi
+fi
+
+# === 加载配置 ===
+if [ ! -f "$CONF_FILE" ]; then
+    echo "Error: cluster.conf not found at $CONF_FILE"
+    echo "Please copy and edit cluster.conf before running deploy.sh"
+    exit 1
+fi
+source "$CONF_FILE"
+
+# === 工具函数 ===
+log_info()  { echo -e "\033[32m[INFO]\033[0m $*"; }
+log_warn()  { echo -e "\033[33m[WARN]\033[0m $*"; }
+log_error() { echo -e "\033[31m[ERROR]\033[0m $*"; }
+
+die() { log_error "$@"; exit 1; }
+
+# 从 cluster.conf 解析
+get_etcd_ip()   { echo "$1" | cut -d: -f2; }
+get_etcd_name() { echo "$1" | cut -d: -f1; }
+get_node_ip()   { echo "$1" | cut -d: -f2; }
+get_node_name() { echo "$1" | cut -d: -f1; }
+get_node_role() { echo "$1" | cut -d: -f3; }
+
+# 构建 ETCD_PEERS (etcd 集群 member 列表)
+build_etcd_peers() {
+    local peers=""
+    for var in ETCD_A1 ETCD_B1 ETCD_C1; do
+        local name && name=$(get_etcd_name "${!var}")
+        local ip && ip=$(get_etcd_ip "${!var}")
+        if [ -z "$peers" ]; then
+            peers="${name}=http://${ip}:2380"
+        else
+            peers="${peers},${name}=http://${ip}:2380"
+        fi
+    done
+    echo "$peers"
+}
+
+# 构建 ETCD_HOSTS (Patroni DCS 连接端点)
+build_etcd_hosts() {
+    local hosts=""
+    for var in ETCD_A1 ETCD_B1 ETCD_C1; do
+        local ip && ip=$(get_etcd_ip "${!var}")
+        if [ -z "$hosts" ]; then
+            hosts="${ip}:2379"
+        else
+            hosts="${hosts},${ip}:2379"
+        fi
+    done
+    echo "$hosts"
+}
+
+# 构建 DB HOST_NAMES 和 HOST_IPS
+build_db_hosts() {
+    local names=""
+    local ips=""
+    for n in "$MASTER" "$SLAVE01" "$SLAVE02"; do
+        local name && name=$(get_node_name "$n")
+        local ip && ip=$(get_node_ip "$n")
+        if [ -z "$names" ]; then
+            names="$name"; ips="$ip"
+        else
+            names="${names},${name}"; ips="${ips},${ip}"
+        fi
+    done
+    echo "$names|$ips"
+}
+
+# 检查 IP 是否属于 etcd 节点
+is_etcd_node_ip() {
+    local ip=$1
+    for var in ETCD_A1 ETCD_B1 ETCD_C1; do
+        local etcd_ip && etcd_ip=$(get_etcd_ip "${!var}")
+        [ "$etcd_ip" = "$ip" ] && return 0
+    done
+    return 1
+}
+
+check_port() {
+    local port=$1
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if lsof -i :"$port" -P -n 2>/dev/null | grep -q LISTEN; then
+            log_warn "Port $port already in use"
+            return 1
+        fi
+    else
+        if ss -tlnp 2>/dev/null | grep -q ":${port} "; then
+            log_warn "Port $port already in use"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# ============================================================
+# cmd_install - 一键安装节点
+# ============================================================
+cmd_install() {
+    local node_name="${1:-}"
+    local node_ip="${2:-}"
+
+    [ -z "$node_name" ] || [ -z "$node_ip" ] && die "Usage: $0 install <name> <ip>"
+
+    log_info "Installing node: $node_name ($node_ip)"
+    command -v docker &>/dev/null || die "Docker is not installed"
+
+    mkdir -p "data/$node_name/data" "data/$node_name/logs"
+
+    # --- 判定节点类型 ---
+    local NODE_TYPE  # etcd | compact | db
+    if [[ "$node_name" == etcd-* ]]; then
+        NODE_TYPE="etcd"
+    elif is_etcd_node_ip "$node_ip"; then
+        NODE_TYPE="compact"
+        log_info "Compact mode: $node_name runs etcd + openGauss on same host"
+    else
+        NODE_TYPE="db"
+    fi
+
+    # --- 构建变量 ---
+    local ETCD_PEERS && ETCD_PEERS=$(build_etcd_peers)
+    local ETCD_HOSTS && ETCD_HOSTS=$(build_etcd_hosts)
+    local DB_INFO && DB_INFO=$(build_db_hosts)
+    local HOST_NAMES && HOST_NAMES=$(echo "$DB_INFO" | cut -d'|' -f1)
+    local HOST_IPS   && HOST_IPS=$(echo "$DB_INFO" | cut -d'|' -f2)
+
+    # 空数据目录的 etcd 初始成员都使用 new；故障重建由 etcd-recover 强制改为 existing。
+    local CLUSTER_NEW_VAL="false"
+    if [ "$NODE_TYPE" = "etcd" ] || [ "$NODE_TYPE" = "compact" ]; then
+        if [ ! -d "data/$node_name/data/etcd.data" ]; then
+            CLUSTER_NEW_VAL="true"
+            log_info "Empty etcd data dir -> initializing as static bootstrap member"
+        fi
+    fi
+
+    # --- 写入 .env ---
+    cat > "$SCRIPT_DIR/.env" <<'INNEREOF'
+# Auto-generated by deploy.sh
+OPEN_GAUSS_VERSION=OPENGAUSS_VER_PLACEHOLDER
+GAUSS_USER=GAUSS_USER_PLACEHOLDER
+GAUSS_PASSWORD=GAUSS_PASS_PLACEHOLDER
+GAUSS_DATABASE=GAUSS_DB_PLACEHOLDER
+ETCD_PEERS=ETCD_PEERS_PLACEHOLDER
+ETCD_HOSTS=ETCD_HOSTS_PLACEHOLDER
+ETCD_CLUSTER_TOKEN=ETCD_TOKEN_PLACEHOLDER
+CLUSTER_NEW=CLUSTER_NEW_PLACEHOLDER
+HOST_NAMES=HOST_NAMES_PLACEHOLDER
+HOST_IPS=HOST_IPS_PLACEHOLDER
+HOST_IP=HOST_IP_PLACEHOLDER
+LOOP_WAIT=LOOP_WAIT_PLACEHOLDER
+RETRY_TIMEOUT=RETRY_TIMEOUT_PLACEHOLDER
+TTL=TTL_PLACEHOLDER
+SYNCHRONOUS_MODE=SYNCHRONOUS_MODE_PLACEHOLDER
+MAXIMUM_LAG_ON_FAILOVER=MAXIMUM_LAG_ON_FAILOVER_PLACEHOLDER
+MAX_CONNECTIONS=MAX_CONNECTIONS_PLACEHOLDER
+WAL_LEVEL=WAL_LEVEL_PLACEHOLDER
+DB_PORT=DB_PORT_PLACEHOLDER
+CONTAINER_NAME=CONTAINER_NAME_PLACEHOLDER
+INNEREOF
+
+    # 替换占位符
+    if [ "$NODE_TYPE" = "compact" ]; then
+        # compact 模式: 不设置外部 etcd，容器内启动本地 etcd
+        sed -i.bak \
+            -e "s|OPENGAUSS_VER_PLACEHOLDER|$OPEN_GAUSS_VERSION|g" \
+            -e "s|GAUSS_USER_PLACEHOLDER|$GAUSS_USER|g" \
+            -e "s|GAUSS_PASS_PLACEHOLDER|$GAUSS_PASSWORD|g" \
+            -e "s|GAUSS_DB_PLACEHOLDER|$GAUSS_DATABASE|g" \
+            -e "s|ETCD_PEERS_PLACEHOLDER||g" \
+            -e "s|ETCD_HOSTS_PLACEHOLDER||g" \
+            -e "s|ETCD_TOKEN_PLACEHOLDER|$ETCD_CLUSTER_TOKEN|g" \
+            -e "s|CLUSTER_NEW_PLACEHOLDER|$CLUSTER_NEW_VAL|g" \
+            -e "s|HOST_NAMES_PLACEHOLDER|$HOST_NAMES|g" \
+            -e "s|HOST_IPS_PLACEHOLDER|$HOST_IPS|g" \
+            -e "s|HOST_IP_PLACEHOLDER|$node_ip|g" \
+            -e "s|LOOP_WAIT_PLACEHOLDER|$LOOP_WAIT|g" \
+            -e "s|RETRY_TIMEOUT_PLACEHOLDER|$RETRY_TIMEOUT|g" \
+            -e "s|TTL_PLACEHOLDER|$TTL|g" \
+            -e "s|SYNCHRONOUS_MODE_PLACEHOLDER|$SYNCHRONOUS_MODE|g" \
+            -e "s|MAXIMUM_LAG_ON_FAILOVER_PLACEHOLDER|$MAXIMUM_LAG_ON_FAILOVER|g" \
+            -e "s|MAX_CONNECTIONS_PLACEHOLDER|$MAX_CONNECTIONS|g" \
+            -e "s|WAL_LEVEL_PLACEHOLDER|$WAL_LEVEL|g" \
+            -e "s|DB_PORT_PLACEHOLDER|$DB_PORT|g" \
+            -e "s|CONTAINER_NAME_PLACEHOLDER|$node_name|g" \
+            "$SCRIPT_DIR/.env"
+    else
+        # dedicated etcd 模式: 使用外部 etcd 集群
+        sed -i.bak \
+            -e "s|OPENGAUSS_VER_PLACEHOLDER|$OPEN_GAUSS_VERSION|g" \
+            -e "s|GAUSS_USER_PLACEHOLDER|$GAUSS_USER|g" \
+            -e "s|GAUSS_PASS_PLACEHOLDER|$GAUSS_PASSWORD|g" \
+            -e "s|GAUSS_DB_PLACEHOLDER|$GAUSS_DATABASE|g" \
+            -e "s|ETCD_PEERS_PLACEHOLDER|$ETCD_PEERS|g" \
+            -e "s|ETCD_HOSTS_PLACEHOLDER|$ETCD_HOSTS|g" \
+            -e "s|ETCD_TOKEN_PLACEHOLDER|$ETCD_CLUSTER_TOKEN|g" \
+            -e "s|CLUSTER_NEW_PLACEHOLDER|$CLUSTER_NEW_VAL|g" \
+            -e "s|HOST_NAMES_PLACEHOLDER|$HOST_NAMES|g" \
+            -e "s|HOST_IPS_PLACEHOLDER|$HOST_IPS|g" \
+            -e "s|HOST_IP_PLACEHOLDER|$node_ip|g" \
+            -e "s|LOOP_WAIT_PLACEHOLDER|$LOOP_WAIT|g" \
+            -e "s|RETRY_TIMEOUT_PLACEHOLDER|$RETRY_TIMEOUT|g" \
+            -e "s|TTL_PLACEHOLDER|$TTL|g" \
+            -e "s|SYNCHRONOUS_MODE_PLACEHOLDER|$SYNCHRONOUS_MODE|g" \
+            -e "s|MAXIMUM_LAG_ON_FAILOVER_PLACEHOLDER|$MAXIMUM_LAG_ON_FAILOVER|g" \
+            -e "s|MAX_CONNECTIONS_PLACEHOLDER|$MAX_CONNECTIONS|g" \
+            -e "s|WAL_LEVEL_PLACEHOLDER|$WAL_LEVEL|g" \
+            -e "s|DB_PORT_PLACEHOLDER|$DB_PORT|g" \
+            -e "s|CONTAINER_NAME_PLACEHOLDER|$node_name|g" \
+            "$SCRIPT_DIR/.env"
+    fi
+    rm -f "$SCRIPT_DIR/.env.bak"
+
+    # 设置节点特有变量
+    if [ "$NODE_TYPE" = "etcd" ]; then
+        echo "RUN_MODE=etcd"   >> "$SCRIPT_DIR/.env"
+        echo "NODE_NAME=$node_name" >> "$SCRIPT_DIR/.env"
+    else
+        local ni=1
+        case "$node_name" in master) ni=1 ;; slave01) ni=2 ;; slave02) ni=3 ;; esac
+        echo "RUN_MODE=$node_name"          >> "$SCRIPT_DIR/.env"
+        echo "NODE_NAME=datanode${ni}"      >> "$SCRIPT_DIR/.env"
+    fi
+
+    log_info "Generated .env for $node_name (NODE_TYPE=$NODE_TYPE, HOST_IP=$node_ip)"
+
+    # --- 端口检查 ---
+    if [ "$NODE_TYPE" != "db" ]; then
+        check_port 2379; check_port 2380
+    fi
+    if [ "$NODE_TYPE" != "etcd" ]; then
+        check_port 5432; check_port 5433; check_port 5436; check_port 5437; check_port 8008
+    fi
+
+    # --- 启动容器 ---
+    log_info "Starting container..."
+    $DOCKER_COMPOSE_CMD -f "$SCRIPT_DIR/docker-compose.yml" up -d
+
+    # --- 等待健康 ---
+    log_info "Waiting for health check..."
+    local max_wait=120 waited=0
+    if [ "$NODE_TYPE" = "etcd" ]; then
+        while [ $waited -lt $max_wait ]; do
+            curl -s --connect-timeout 2 "http://${node_ip}:2379/health" | grep -q "true" && break
+            sleep 5; waited=$((waited + 5))
+        done
+    else
+        while [ $waited -lt $max_wait ]; do
+            curl -s --connect-timeout 2 "http://${node_ip}:8008/health" 2>/dev/null | python -c "import sys,json; sys.exit(0 if json.load(sys.stdin).get('state')=='running' else 1)" 2>/dev/null && break
+            sleep 5; waited=$((waited + 5))
+        done
+    fi
+
+    if [ $waited -ge $max_wait ]; then
+        if [ "$NODE_TYPE" = "etcd" ] && docker ps --format '{{.Names}}' | grep -q "^${node_name}$"; then
+            log_warn "etcd container is running but cluster is not healthy yet. Start enough initial etcd members to form quorum."
+        else
+            log_error "Startup timeout. Check: docker logs $node_name"
+            exit 1
+        fi
+    fi
+
+    log_info "Node $node_name installed successfully!"
+    cmd_status
+}
+
+# ============================================================
+# cmd_status - 集群状态
+# ============================================================
+cmd_status() {
+    echo ""
+    echo "=== etcd Cluster ==="
+    for var in ETCD_A1 ETCD_B1 ETCD_C1; do
+        local name && name=$(get_etcd_name "${!var}")
+        local ip && ip=$(get_etcd_ip "${!var}")
+        if curl -s --connect-timeout 3 "http://${ip}:2379/health" &>/dev/null; then
+            echo "  $name ($ip) : healthy"
+        else
+            echo "  $name ($ip) : unreachable"
+        fi
+    done
+    echo ""
+    echo "=== openGauss Nodes ==="
+    echo "  (via patroni REST API port 8008)"
+    for var in MASTER SLAVE01 SLAVE02; do
+        local name && name=$(get_node_name "${!var}")
+        local ip && ip=$(get_node_ip "${!var}")
+        local health && health=$(curl -s --connect-timeout 3 "http://${ip}:8008/health" 2>/dev/null)
+        if [ -n "$health" ]; then
+            local state && state=$(echo "$health" | python -c "import sys,json; print(json.load(sys.stdin).get('state','unknown'))" 2>/dev/null)
+            local role && role=$(echo "$health" | python -c "import sys,json; print(json.load(sys.stdin).get('role','unknown'))" 2>/dev/null)
+            echo "  $name ($ip) : state=$state role=$role"
+        else
+            echo "  $name ($ip) : unreachable"
+        fi
+    done
+    echo ""
+    echo "=== Containers ==="
+    docker ps --format "table {{.Names}}\t{{.Status}}" 2>/dev/null | head -10
+    echo ""
+}
+
+# ============================================================
+# cmd_recover - 恢复 DB 节点
+# ============================================================
+cmd_recover() {
+    local node_name="${1:-}"
+    [ -z "$node_name" ] && die "Usage: $0 recover <name>"
+
+    log_info "Recovering: $node_name"
+    if docker ps -a --format '{{.Names}}' | grep -q "^${node_name}$"; then
+        docker stop "$node_name" 2>/dev/null || true
+    fi
+
+    if [ -f "data/$node_name/data/conf/init_db" ]; then
+        log_info "Data intact, restarting..."
+        docker start "$node_name" 2>/dev/null || \
+            $DOCKER_COMPOSE_CMD -f "$SCRIPT_DIR/docker-compose.yml" up -d
+    else
+        log_warn "Data lost, rebuilding..."
+        rm -rf "data/$node_name/data"
+        sed -i.bak 's/^CLUSTER_NEW=.*/CLUSTER_NEW=false/' "$SCRIPT_DIR/.env" 2>/dev/null && rm -f "$SCRIPT_DIR/.env.bak"
+        $DOCKER_COMPOSE_CMD -f "$SCRIPT_DIR/docker-compose.yml" up -d
+    fi
+
+    sleep 10
+    docker ps --format '{{.Names}}' | grep -q "^${node_name}$" \
+        && log_info "$node_name recovered" \
+        || log_error "Recovery failed - check: docker logs $node_name"
+}
+
+# ============================================================
+# cmd_etcd_recover - 恢复 etcd 节点
+# ============================================================
+cmd_etcd_recover() {
+    local node_name="${1:-}"
+    [ -z "$node_name" ] && die "Usage: $0 etcd-recover <name>"
+
+    local node_ip=""
+    for var in ETCD_A1 ETCD_B1 ETCD_C1; do
+        [ "$(get_etcd_name "${!var}")" = "$node_name" ] && { node_ip=$(get_etcd_ip "${!var}"); break; }
+    done
+    [ -z "$node_ip" ] && die "$node_name not found in cluster.conf"
+
+    log_info "Recovering etcd: $node_name ($node_ip)"
+    docker stop "$node_name" 2>/dev/null || true
+    docker rm "$node_name" 2>/dev/null || true
+
+    rm -rf "data/$node_name/data/etcd.data" "data/$node_name/data/etcd.wal" 2>/dev/null || true
+    sed -i.bak 's/^CLUSTER_NEW=.*/CLUSTER_NEW=false/' "$SCRIPT_DIR/.env" 2>/dev/null && rm -f "$SCRIPT_DIR/.env.bak"
+
+    $DOCKER_COMPOSE_CMD -f "$SCRIPT_DIR/docker-compose.yml" up -d
+    sleep 10
+    curl -s --connect-timeout 3 "http://${node_ip}:2379/health" | grep -q "true" \
+        && log_info "$node_name recovered" \
+        || log_warn "$node_name may need more sync time"
+}
+
+# ============================================================
+# cmd_promote - 手工提升备库
+# ============================================================
+cmd_promote() {
+    local target="${1:-}"
+    [ -z "$target" ] && die "Usage: $0 promote <name>"
+
+    for n in master slave01 slave02; do
+        if docker ps --format '{{.Names}}' | grep -q "^${n}$"; then
+            log_info "Promoting $target via $n..."
+            docker exec "$n" patronictl -c /opt/software/openGauss/data/conf/patroni.yaml switchover --master "$target" 2>&1 || {
+                log_warn "Switchover failed, forcing failover..."
+                docker exec "$n" patronictl -c /opt/software/openGauss/data/conf/patroni.yaml failover --candidate "$target" 2>&1
+            }
+            cmd_status
+            return
+        fi
+    done
+    die "No running DB container found"
+}
+
+# ============================================================
+# 主入口
+# ============================================================
+case "${1:-}" in
+    install)       cmd_install "${2:-}" "${3:-}" ;;
+    status)        cmd_status ;;
+    recover)       cmd_recover "${2:-}" ;;
+    etcd-recover)  cmd_etcd_recover "${2:-}" ;;
+    promote)       cmd_promote "${2:-}" ;;
+    *)
+        echo ""
+        echo "openGauss HA Cluster - Deploy & Recovery"
+        echo ""
+        echo "Usage:"
+        echo "  $0 install <name> <ip>       Install node"
+        echo "  $0 status                     Cluster health"
+        echo "  $0 recover <name>             Recover DB node"
+        echo "  $0 etcd-recover <name>        Recover etcd node"
+        echo "  $0 promote <name>             Promote standby"
+        echo ""
+        echo "Examples:"
+        echo "  $0 install etcd-a1 10.0.1.10"
+        echo "  $0 install master 10.0.1.11"
+        echo "  $0 recover slave01"
+        echo "  $0 promote slave01"
+        echo ""
+        ;;
+esac

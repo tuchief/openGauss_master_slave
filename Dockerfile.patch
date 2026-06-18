@@ -1,0 +1,27 @@
+# ============================================================
+# openGauss HA with Patroni - patched for ARM64
+# ============================================================
+# Note: mot_shim.so must be pre-compiled on the target ARM server
+# using: gcc -shared -fPIC -o image/mot_shim.so image/mot_shim.c
+FROM server.aiknown.cn:31003/z-rps/opengauss:5.0.3_arm
+
+LABEL maintainer="tuchief" \
+      description="openGauss HA with Patroni - patched for external etcd + MOT workaround"
+
+# Copy pre-compiled MOT shim
+COPY image/mot_shim.so /opt/software/mot_shim.so
+
+# Copy entrypoint scripts
+COPY image/app.sh /opt/software/app.sh
+COPY image/entrypoint.sh /opt/software/entrypoint.sh
+COPY image/patch_gaussdb.py /tmp/patch_gaussdb.py
+
+RUN chmod +x /opt/software/app.sh /opt/software/entrypoint.sh /opt/software/mot_shim.so && \
+    # Fix omm's .bashrc: SOFT_HOME must be set before GAUSSHOME
+    sed -i '/^export SOFT_HOME=/d' /home/omm/.bashrc && \
+    sed -i '/^export GAUSSHOME=/i export SOFT_HOME=/opt/software' /home/omm/.bashrc && \
+    # Binary-patch gaussdb: make MOT::AllocThreadId* always return 0
+    python3 /tmp/patch_gaussdb.py && \
+    rm /tmp/patch_gaussdb.py
+
+ENTRYPOINT ["/bin/bash", "/opt/software/entrypoint.sh"]

@@ -48,7 +48,8 @@ if [[ ! -d "$GAUSS_CONF" ]]; then
 fi
 
 GAUSS_PORT=5432
-MAX_CONNECTIONS=1000
+MAX_CONNECTIONS=${MAX_CONNECTIONS:-1000}
+WAL_LEVEL=${WAL_LEVEL:-logical}
 
 waitterm() {
     local PID
@@ -128,10 +129,10 @@ function config_datanode(){
     -c "local_bind_address = '0.0.0.0'"  \
     -c "most_available_sync = on"  \
     -c "pgxc_node_name = '${HOSTNAME}'"  \
-    -c "wal_level = logical"  \
+    -c "wal_level = $WAL_LEVEL"  \
     -c "password_encryption_type= 0"  \
     -c "synchronous_standby_names='*'"  \
-    -c "max_wal_senders=16"  \
+    -c "max_wal_senders=$((MAX_CONNECTIONS - 2))"  \
     -c "max_replication_slots=9"  \
     -c "wal_sender_timeout=0s" \
     -c "wal_receiver_timeout=0s"\
@@ -171,8 +172,8 @@ function init_db() {
                 echo "[step 1]: init data node"
                 gs_initdb -D $GAUSS_DB --nodename=$NODE_NAME -E UTF-8 --locale=en_US.UTF-8 -U omm  -w $GAUSS_PASSWORD
                 config_datanode
-                echo "enable_numa = false" >> "$GAUSS_DB/mot.conf"
-                echo "[step 3]: start single_node." 
+                echo -e "enable_numa = false\naffinity_mode = none" >> "$GAUSS_DB/mot.conf"
+                echo "[step 3]: start single_node."
                 gs_ctl start -D $GAUSS_DB  -Z single_node -l logfile
                 echo "[step 4]: CREATE USER $GAUSS_USER." 
                 gsql -d postgres -c "CREATE USER $GAUSS_USER WITH SYSADMIN CREATEDB USEFT CREATEROLE INHERIT LOGIN REPLICATION IDENTIFIED BY '$GAUSS_PASSWORD';"
@@ -210,7 +211,11 @@ function init_db() {
                         echo -e "\033[31m ==>build failed\033[0m"
                         sleep 1s                        
                     fi
-                done            
+                done
+                # 清理 init 阶段遗留的 postmaster.pid.lock，否则 Patroni 启动时 MOT 引擎初始化失败
+                rm -f $GAUSS_DB/postmaster.pid.lock
+                # 清理 MOT 引擎崩溃残留的共享内存段
+                ipcrm -a 2>/dev/null || true
                 set -e
                 echo "[step 6]:first Start OpenGauss"
                 first_Start_OpenGauss
@@ -250,13 +255,20 @@ function init_db() {
 # 生成 IP_CLUSTER_ARR, CLUSTER_HOSTNAME_ARR
 # 用 environment 设置: HOST_NAMES
 get_HOST_NAMES_IP () {
-    echo "----set HOST NAMES IP-----"    
-    HOST_NAMES_ARR=(${HOST_NAMES//,/ })
-    HOST_IPS_ARR=(${HOST_IPS//,/ })
-    # 删除本机
+    echo "----set HOST NAMES IP-----"
+    local -a all_names=(${HOST_NAMES//,/ })
+    local -a all_ips=(${HOST_IPS//,/ })
+    # 删除本机 — 用一个循环去除匹配元素，避免 bash ${var/pattern} 产生空元素
     HOSTNAME=$(cat /proc/sys/kernel/hostname)
-    HOST_NAMES_ARR=(${HOST_NAMES_ARR[*]/$HOSTNAME})    
-    HOST_IPS_ARR=(${HOST_IPS_ARR[*]/$HOST_IP})
+    HOST_NAMES_ARR=()
+    HOST_IPS_ARR=()
+    for i in "${!all_names[@]}"; do
+        if [ "${all_names[$i]}" = "$HOSTNAME" ]; then
+            continue
+        fi
+        HOST_NAMES_ARR+=("${all_names[$i]}")
+        HOST_IPS_ARR+=("${all_ips[$i]}")
+    done
 
     IP_CLUSTER_ARR=()
     CLUSTER_HOSTNAME_ARR=()
@@ -285,6 +297,22 @@ get_HOST_NAMES_IP () {
 
 get_ETCD_INITIAL_CLUSTER () {
     echo "----get_ETCD_INITIAL_CLUSTER-----"
+    # 优先使用外部配置的 ETCD_PEERS（独立 etcd 集群场景）
+    if [ -n "${ETCD_PEERS:-}" ]; then
+        ETCD_INITIAL_CLUSTER="$ETCD_PEERS"
+        CLIENT_URLS=""
+        IFS=',' read -ra PEER_ARR <<< "$ETCD_PEERS"
+        for peer in "${PEER_ARR[@]}"; do
+            ip_part=$(echo "$peer" | sed 's/.*http:\/\/\([^:]*\):.*/\1/')
+            if [ -n "$CLIENT_URLS" ]; then
+                CLIENT_URLS="${CLIENT_URLS},http://${ip_part}:2379"
+            else
+                CLIENT_URLS="http://${ip_part}:2379"
+            fi
+        done
+        echo "Using external ETCD_PEERS: $ETCD_PEERS"
+        return 0
+    fi
     local len=$(($PEER_NUM - 1))
     ETCD_INITIAL_CLUSTER="${HOSTNAME}=http://${HOST_IP}:2380"
     CLIENT_URLS="http://${HOST_IP}:2379"
@@ -309,22 +337,26 @@ set_etcd_config() {
         CLUSTER_NEW="false"
     fi
 
-    # 检查 etcd/etcd.data 目录是否已存在
-    if [[ -d "$SOFT_HOME/etcd/etcd.data" ]]; then
+    local etcd_data_dir="$GAUSSHOME/data/etcd.data"
+    local etcd_wal_dir="$GAUSSHOME/data/etcd.wal"
+    local etcd_cluster_token="${ETCD_CLUSTER_TOKEN:-cluster1}"
+
+    # 检查持久化 etcd 数据目录是否已存在
+    if [[ -d "$etcd_data_dir" ]]; then
         echo "etcd/etcd.data directory already exists, treating as existing member..."
         sed -i "/^initial-cluster-state:/c\initial-cluster-state: 'existing'" $GAUSS_CONF/etcd.conf
         return 0
     fi
     cp $SOFT_HOME/etcd.conf.sample $GAUSS_CONF/etcd.conf
-    sed -i "/^data-dir:/c\data-dir: '$SOFT_HOME/etcd/etcd.data'" $GAUSS_CONF/etcd.conf
-    sed -i "/^wal-dir:/c\wal-dir: '$SOFT_HOME/etcd/etcd.wal'" $GAUSS_CONF/etcd.conf
+    sed -i "/^data-dir:/c\data-dir: '$etcd_data_dir'" $GAUSS_CONF/etcd.conf
+    sed -i "/^wal-dir:/c\wal-dir: '$etcd_wal_dir'" $GAUSS_CONF/etcd.conf
     sed -i "/^name:/c\name: '${HOSTNAME}'" $GAUSS_CONF/etcd.conf
     sed -i "/^listen-peer-urls:/c\listen-peer-urls: 'http:\/\/0.0.0.0:2380'" $GAUSS_CONF/etcd.conf 
     sed -i "/^initial-advertise-peer-urls:/c\initial-advertise-peer-urls: 'http:\/\/${HOST_IP}:2380'" $GAUSS_CONF/etcd.conf 
     sed -i "/^advertise-client-urls:/c\advertise-client-urls: 'http:\/\/${HOST_IP}:2379,http:\/\/${HOST_IP}:4001'" $GAUSS_CONF/etcd.conf
     sed -i "/^listen-client-urls:/c\listen-client-urls: 'http://0.0.0.0:2379,http://0.0.0.0:4001'" $GAUSS_CONF/etcd.conf
     sed -i "/^initial-cluster:/c\initial-cluster: '${ETCD_INITIAL_CLUSTER}'" $GAUSS_CONF/etcd.conf
-    sed -i "/^initial-cluster-token:/c\initial-cluster-token: 'cluster1'" $GAUSS_CONF/etcd.conf
+    sed -i "/^initial-cluster-token:/c\initial-cluster-token: '$etcd_cluster_token'" $GAUSS_CONF/etcd.conf
     sed -i "/^log-level:/c\#log-level: debug" $GAUSS_CONF/etcd.conf
     sed -i "/^cors:/c\cors: '*'" $GAUSS_CONF/etcd.conf
 
@@ -342,6 +374,11 @@ set_etcd_config() {
 }
 
 get_ETCD_HOSTS () {
+    # 优先使用外部配置的 ETCD_HOSTS（连接外部 etcd 集群的场景）
+    if [ -n "${ETCD_HOSTS:-}" ]; then
+        echo "Using external ETCD_HOSTS (Patroni DCS): $ETCD_HOSTS"
+        return 0
+    fi
     ETCD_HOSTS="${HOST_IP}:2379"
     for i in $(seq 0 $len); do
         ETCD_HOSTS="${ETCD_HOSTS},${IP_CLUSTER_ARR[$i]}:2379"
@@ -350,11 +387,28 @@ get_ETCD_HOSTS () {
 
 set_patroni_config() {
     get_ETCD_HOSTS
+    local patroni_ttl="${TTL:-30}"
+    local patroni_loop_wait="${LOOP_WAIT:-10}"
+    local patroni_retry_timeout="${RETRY_TIMEOUT:-10}"
+    local patroni_synchronous_mode="${SYNCHRONOUS_MODE:-false}"
+    local patroni_max_lag="${MAXIMUM_LAG_ON_FAILOVER:-1048576}"
+    local patroni_wal_level="${WAL_LEVEL:-hotstandby}"
+    local patroni_max_wal_senders="${MAX_WAL_SENDERS:-10}"
+    local patroni_max_replication_slots="${MAX_REPLICATION_SLOTS:-10}"
+
     cp $SOFT_HOME/patroni.yaml.sample $GAUSS_CONF/patroni.yaml
     sed -i "s/^name: name/name: $HOSTNAME/" $GAUSS_CONF/patroni.yaml
     sed -i "s/^  listen: localhost:8008/  listen: $HOST_IP:8008/" $GAUSS_CONF/patroni.yaml
     sed -i "s/^  connect_address: localhost:8008/  connect_address: $HOST_IP:8008/" $GAUSS_CONF/patroni.yaml
     sed -i "s/^  host: localhost:2379/  hosts: $ETCD_HOSTS/" $GAUSS_CONF/patroni.yaml
+    sed -i "s/^    ttl: .*/    ttl: $patroni_ttl/" $GAUSS_CONF/patroni.yaml
+    sed -i "s/^    loop_wait: .*/    loop_wait: $patroni_loop_wait/" $GAUSS_CONF/patroni.yaml
+    sed -i "s/^    retry_timeout: .*/    retry_timeout: $patroni_retry_timeout/" $GAUSS_CONF/patroni.yaml
+    sed -i "s/^    maximum_lag_on_failover: .*/    maximum_lag_on_failover: $patroni_max_lag/" $GAUSS_CONF/patroni.yaml
+    sed -i "s/^    synchronous_mode: .*/    synchronous_mode: $patroni_synchronous_mode/" $GAUSS_CONF/patroni.yaml
+    sed -i "s/^        wal_level: .*/        wal_level: $patroni_wal_level/" $GAUSS_CONF/patroni.yaml
+    sed -i "s/^        max_wal_sender: .*/        max_wal_sender: $patroni_max_wal_senders/" $GAUSS_CONF/patroni.yaml
+    sed -i "s/^        max_replication_slots: .*/        max_replication_slots: $patroni_max_replication_slots/" $GAUSS_CONF/patroni.yaml
     sed -i "s/^  listen: localhost:16000/  listen: $HOST_IP:$GAUSS_PORT/" $GAUSS_CONF/patroni.yaml
     sed -i "s#^  data_dir: /var/lib/opengauss/data#  data_dir: $GAUSS_DB#" $GAUSS_CONF/patroni.yaml
     sed -i "s#^  bin_dir: /usr/local/opengauss/bin#  bin_dir: $GAUSSHOME/bin#" $GAUSS_CONF/patroni.yaml
@@ -478,7 +532,9 @@ function start_etcd(){
 function start_db(){
     if [ $RUN_MODE != "standard" ]; then
         echo "change patroni config"
-        set_patroni_config    
+        set_patroni_config
+        # 清理 MOT 引擎崩溃残留的共享内存段，防止 Patroni 重试时仍被占用
+        ipcrm -a 2>/dev/null || true
         echo -e "\033[32m ==> Start $(patroni --version) Server... \033[0m"
         exec patroni $GAUSS_CONF/patroni.yaml 2>&1 | tee $LOGS_HOME/patroni.log
         #nohup patroni $GAUSS_CONF/patroni.yaml  | tee $LOGS_HOME/patroni.log 2>&1 &        
@@ -529,8 +585,15 @@ if [ "$RUN_MODE" == "etcd" ]; then
     exit 0
 fi
 
-if [ $RUN_MODE != "standard" ]; then    
-    start_etcd
+if [ $RUN_MODE != "standard" ]; then
+    # 如果配置了外部 ETCD_HOSTS（或 RUN_MODE=etcd），跳过 embedded etcd
+    if [ -n "${ETCD_HOSTS:-}" ]; then
+        echo "Using external etcd cluster (ETCD_HOSTS=$ETCD_HOSTS), skipping local etcd"
+    else
+        start_etcd
+    fi
+    # 无论是否使用外部 etcd，都需要设置节点发现信息（给 config_datanode 用）
+    get_HOST_NAMES_IP
 fi
 init_db
 start_db
